@@ -2,14 +2,14 @@
 package converter
 
 import (
-	wp "github.com/amanessinger/wordpress-xml-to-hugo/pkg/parser"
+	wp "github.com/raptium/wordpress-xml-to-hugo/pkg/parser"
 	"regexp"
 	"strings"
 )
 
 // path under content where posts should be generated. "post" and "posts" are both common,
 // but the Hugo theme will expect one of them
-const PostDirectoryContentSubPath = "post"
+const PostDirectoryContentSubPath = "posts"
 
 // text/template for posts
 const PostTemplateSrc = `---
@@ -18,9 +18,9 @@ url: {{ .Link }}
 publishDate: {{ .PubDate }}
 date: {{ .PostDate }}
 categories: {{ range .Categories }}{{ if eq .Domain "category" }}
-  - "{{ .UrlSlug }}"{{ end }}{{ end }}
+  - "{{ .DisplayName}}"{{ end }}{{ end }}
 tags: {{ range .Categories }}{{ if eq .Domain "post_tag" }}
-  - "{{ .UrlSlug }}"{{ end }}{{ end }}
+  - "{{ .DisplayName }}"{{ end }}{{ end }}
 ---
 {{ .Content }}
 `
@@ -56,7 +56,7 @@ var urlReplacements2 = []Replacement{
 	// img target URLs
 	{"http://manessinger.com/display.php/1024x1024", "https://d25zfm9zpd7gm5.cloudfront.net/1200x1200"},
 	// URL of post, URLs of links to other posts: make it all server-absolute
-	{"http://manessinger.com", ""},
+	{"https://archive.raptium.net", ""},
 }
 
 // ready to use replacer

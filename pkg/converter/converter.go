@@ -2,24 +2,52 @@
 package converter
 
 import (
-	// a fork of github.com/grokify/wordpress-xml-go with parsing of comments added
-	wp "github.com/amanessinger/wordpress-xml-to-hugo/pkg/parser"
-
 	"fmt"
+	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/raptium/wordpress-xml-to-hugo/pkg/model"
+	"net/url"
+	"time"
+
+	// a fork of github.com/grokify/wordpress-xml-go with parsing of comments added
+	wp "github.com/raptium/wordpress-xml-to-hugo/pkg/parser"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// convert all items
-func Convert(items []wp.Item, targetBaseDir string) {
+type ContentConverter = func(string) string
 
-	postBaseDir := CreateSubPath(targetBaseDir, filepath.Join("content", PostDirectoryContentSubPath))
-	commentBaseDir := CreateSubPath(targetBaseDir, filepath.Join("comments", PostDirectoryContentSubPath))
+type WpConverter struct {
+	options          *Options
+	contentConverter ContentConverter
+}
+
+func NewConverter(options *Options) *WpConverter {
+	mdConverter := md.NewConverter("", true, nil)
+	convertContent := func(c string) string {
+		converted, err := mdConverter.ConvertString(c)
+		if err != nil {
+			return c
+		}
+		return converted
+	}
+
+	converter := &WpConverter{
+		options:          options,
+		contentConverter: convertContent,
+	}
+	return converter
+}
+
+// Convert all items
+func (wc *WpConverter) Convert(items []wp.Item, targetBaseDir string) {
+
+	postBaseDir := CreateSubPath(targetBaseDir, PostDirectoryContentSubPath)
+	//commentBaseDir := CreateSubPath(targetBaseDir, filepath.Join("comments", PostDirectoryContentSubPath))
 
 	for _, item := range items {
 		if isPost(item) {
-			if err := convertItem(item, postBaseDir, commentBaseDir); err != nil {
+			if err := wc.convertItem(item, postBaseDir); err != nil {
 				panic(err)
 			}
 		}
@@ -27,48 +55,101 @@ func Convert(items []wp.Item, targetBaseDir string) {
 }
 
 // convert an item according to a template
-func convertItem(item wp.Item, itemBaseDir string, commentBaseDir string) error {
-	// make replacements
-	item.Title = QuotesReplacer.Replace(item.Title)
-	item.Link = UrlReplacer2.Replace(item.Link)
-	item.Content = UrlReplacer1.Replace(item.Content)
-	item.Content = UrlReplacer2.Replace(item.Content)
-	item.Content = EmojiReplacer.Replace(item.Content)
-	item.Content = EliminateAmazonAds(item.Content)
+func (wc *WpConverter) convertItem(item wp.Item, itemBaseDir string) error {
+	fmc, err := wc.buildContent(item)
+	if err != nil {
+		return err
+	}
 
-	// construct and make the target directory
-	targetPath := itemBaseDir
-	// TODO: not everybody will have ".html"
-	itemPath := strings.TrimSuffix(strings.Join(strings.Split(item.Link, "/"), string(filepath.Separator)), ".html")
-	itemSubDirPath := filepath.Dir(itemPath)
-	CreateSubPath(targetPath, itemSubDirPath)
+	filePath := strings.TrimSuffix(filepath.Join(itemBaseDir, fmc.FrontMatter.Url), "/") + ".md"
+	dir := filepath.Dir(filePath)
+	err = os.MkdirAll(dir, 0755)
+	if err != nil {
+		return err
+	}
 
-	// construct target file path
-	itemFullPath := targetPath +
-		string(filepath.Separator) + itemPath + ".md"
-
-	// open target file
-	f, err := os.OpenFile(itemFullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
-	// write file
-	err = PostTemplate.Execute(f, item)
+	err = fmc.WriteTo(f)
 	if err != nil {
 		return err
 	}
 
 	// if we have comments, create a comment directory named after the post
-	if len(item.Comments) > 0 {
-		commentDir := CreateSubPath(commentBaseDir, itemPath)
-		if err = HandleComments(commentDir, item, convertComment); err != nil {
-			return err
+	//if len(item.Comments) > 0 {
+	//	commentDir := CreateSubPath(commentBaseDir, itemPath)
+	//	if err = HandleComments(commentDir, item, convertComment); err != nil {
+	//		return err
+	//	}
+	//}
+
+	return nil
+}
+
+func (wc *WpConverter) buildContent(item wp.Item) (*model.FrontMatterContent, error) {
+
+	tags := make([]string, 0)
+	categories := make([]string, 0)
+	for _, category := range item.Categories {
+		if category.Domain == "category" {
+			categories = append(categories, category.DisplayName)
+		}
+		if category.Domain == "post_tag" {
+			tags = append(tags, category.DisplayName)
 		}
 	}
 
-	return nil
+	date, err := time.Parse("2006-01-02 15:04:05", item.PostDateGmt)
+	if err != nil {
+		return nil, err
+	}
+	lastMod, err := time.Parse("2006-01-02 15:04:05", item.PostModifiedGmt)
+	if err != nil {
+		return nil, err
+	}
+	publishDate, err := time.Parse("Mon, 2 Jan 2006 15:04:05 -0700", item.PubDate)
+	if err != nil {
+		return nil, err
+	}
+
+	summary := item.Excerpt
+	if summary == "" {
+		moreIndex := strings.Index(item.Content, "<!--more-->")
+		if moreIndex != -1 {
+			summary = item.Content[0:moreIndex]
+		}
+	}
+
+	item.Content = wc.contentConverter(item.Content)
+	summary = wc.contentConverter(summary)
+
+	path, err := url.PathUnescape(item.Link)
+	if err != nil {
+		return nil, err
+	}
+	path = "/" + strings.TrimPrefix(strings.TrimPrefix(path, wc.options.SiteUrl), "/")
+
+	frontMatter := model.FrontMatter{
+		Type:          "post",
+		Title:         item.Title,
+		Url:           path,
+		Tags:          tags,
+		Categories:    categories,
+		Date:          model.Time{Time: date},
+		LastMod:       model.Time{Time: lastMod},
+		PublishDate:   model.Time{Time: publishDate},
+		Draft:         item.Status != "publish",
+		IsCJKLanguage: true,
+		Summary:       summary,
+	}
+
+	return &model.FrontMatterContent{
+		FrontMatter: frontMatter,
+		Content:     item.Content,
+	}, nil
 }
 
 // takes a func as handler to make it testable

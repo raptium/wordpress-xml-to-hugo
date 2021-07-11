@@ -8,9 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"time"
-
-	"github.com/grokify/gotilla/time/timeutil"
 )
 
 type WpXml struct {
@@ -58,15 +55,11 @@ func (wpxml *WpXml) inflate() error {
 }
 
 func (wpxml *WpXml) inflateItem(item Item) Item {
-	if len(item.Encoded) > 0 && len(item.Encoded[0]) > 0 {
+	if len(item.Encoded) > 0 {
 		item.Content = item.Encoded[0]
-		item.Encoded[0] = ""
 	}
-	if len(item.PubDate) > 0 {
-		dtRfc3339, err := timeutil.FromTo(item.PubDate, time.RFC1123Z, time.RFC3339)
-		if err == nil {
-			item.PubDateRfc3339 = dtRfc3339
-		}
+	if len(item.Encoded) > 1 {
+		item.Excerpt = item.Encoded[1]
 	}
 	return item
 }
@@ -165,23 +158,25 @@ type Author struct {
 
 // Item is a WordPress XML item which can be a post, page or other object.
 type Item struct {
-	Id             int        `xml:"post_id"`
-	Title          string     `xml:"title"`
-	Creator        string     `xml:"creator"`
-	Encoded        []string   `xml:"encoded"`
-	IsSticky       int        `xml:"is_sticky"`
-	Link           string     `xml:"link"`
-	PubDate        string     `xml:"pubDate"`
-	Description    string     `xml:"description"`
-	PostDate       string     `xml:"post_date"`
-	PostDateGmt    string     `xml:"post_date_gmt"`
-	PostName       string     `xml:"post_name"`
-	PostType       string     `xml:"post_type"`
-	Status         string     `xml:"status"`
-	Categories     []Category `xml:"category"`
-	Content        string
-	PubDateRfc3339 string
-	Comments       []Comment `xml:"comment"`
+	Id              int        `xml:"post_id"`
+	Title           string     `xml:"title"`
+	Creator         string     `xml:"creator"`
+	Encoded         []string   `xml:"encoded"`
+	IsSticky        int        `xml:"is_sticky"`
+	Link            string     `xml:"link"`
+	PubDate         string     `xml:"pubDate"`
+	Description     string     `xml:"description"`
+	PostDate        string     `xml:"post_date"`
+	PostDateGmt     string     `xml:"post_date_gmt"`
+	PostModified    string     `xml:"post_modified"`
+	PostModifiedGmt string     `xml:"post_modified_gmt"`
+	PostName        string     `xml:"post_name"`
+	PostType        string     `xml:"post_type"`
+	Status          string     `xml:"status"`
+	Categories      []Category `xml:"category"`
+	Content         string
+	Excerpt         string
+	Comments        []Comment `xml:"comment"`
 }
 
 // ItemThin is a WordPress XML item that is used as additional
@@ -209,11 +204,11 @@ type Comment struct {
 }
 
 // parse a WordPress XML export
-func Parse(path string) (error, *WpXml) {
+func Parse(path string) (*WpXml, error) {
 	var wpXml = NewWordpressXml()
 	var err = wpXml.ReadXml(path)
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
-	return nil, &wpXml
+	return &wpXml, nil
 }

@@ -2,8 +2,8 @@
 package converter
 
 import (
-	"fmt"
-	wp "github.com/amanessinger/wordpress-xml-to-hugo/pkg/parser"
+	wp "github.com/raptium/wordpress-xml-to-hugo/pkg/parser"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,14 +41,13 @@ func MakeParsedTemplate(name string, src string) *template.Template {
 
 // creates a sub-path under a base path and returns its path
 func CreateSubPath(basePath string, subPath string) string {
-	resultPath := filepath.Join(append(filepath.SplitList(basePath), filepath.SplitList(subPath)...)...)
-	dirInfo, err := os.Stat(resultPath)
-	if os.IsNotExist(err) {
-		if err := os.MkdirAll(resultPath, 0755); err != nil {
-			panic(err)
-		}
-	} else if !dirInfo.IsDir() {
-		panic(fmt.Sprintf("path %s exists, but is no directory", resultPath))
+	resultPath, err := filepath.Abs(filepath.Join(basePath, subPath))
+	if err != nil {
+		log.Panicln(err)
+	}
+	err = os.MkdirAll(resultPath, 0755)
+	if err != nil {
+		log.Panicln(err)
 	}
 	return resultPath
 }
