@@ -40,30 +40,36 @@ func NewConverter(options *Options) *WpConverter {
 }
 
 // Convert all items
-func (wc *WpConverter) Convert(items []wp.Item, targetBaseDir string) {
-
-	postBaseDir := CreateSubPath(targetBaseDir, PostDirectoryContentSubPath)
-	//commentBaseDir := CreateSubPath(targetBaseDir, filepath.Join("comments", PostDirectoryContentSubPath))
-
+func (wc *WpConverter) Convert(items []wp.Item, targetBaseDir string) error {
+	var fmc *model.FrontMatterContent
+	var err error
 	for _, item := range items {
+		fmc = nil
 		if isPost(item) {
-			if err := wc.convertItem(item, postBaseDir); err != nil {
-				panic(err)
+			fmc, err = wc.buildContent(item)
+			if err != nil {
+				return err
 			}
 		}
+		if fmc == nil {
+			continue
+		}
+		if err := wc.writeItem(fmc); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // convert an item according to a template
-func (wc *WpConverter) convertItem(item wp.Item, itemBaseDir string) error {
-	fmc, err := wc.buildContent(item)
-	if err != nil {
-		return err
+func (wc *WpConverter) writeItem(fmc *model.FrontMatterContent) error {
+	baseDir := filepath.Join(wc.options.OutputDirectory, fmc.FrontMatter.Type)
+	if fmc.FrontMatter.Type == "post" && wc.options.PostDirectory != "" {
+		baseDir = filepath.Join(wc.options.OutputDirectory, wc.options.PostDirectory)
 	}
-
-	filePath := strings.TrimSuffix(filepath.Join(itemBaseDir, fmc.FrontMatter.Url), "/") + ".md"
+	filePath := strings.TrimSuffix(filepath.Join(baseDir, fmc.FrontMatter.Url), "/") + ".md"
 	dir := filepath.Dir(filePath)
-	err = os.MkdirAll(dir, 0755)
+	err := os.MkdirAll(dir, 0755)
 	if err != nil {
 		return err
 	}
@@ -77,14 +83,6 @@ func (wc *WpConverter) convertItem(item wp.Item, itemBaseDir string) error {
 	if err != nil {
 		return err
 	}
-
-	// if we have comments, create a comment directory named after the post
-	//if len(item.Comments) > 0 {
-	//	commentDir := CreateSubPath(commentBaseDir, itemPath)
-	//	if err = HandleComments(commentDir, item, convertComment); err != nil {
-	//		return err
-	//	}
-	//}
 
 	return nil
 }
@@ -194,29 +192,29 @@ func GetCommentFileNameAndIndentLevel(repliesTo map[int]int, c wp.Comment, comme
 }
 
 // write the comment
-func convertComment(comment wp.Comment, commentFileName string, indentLevel int) error {
-	// set indentation
-	comment.IndentLevel = indentLevel
-
-	// own comments may need replacements
-	comment = FixCommentAuthor(comment)
-	comment.AuthorUrl = UrlReplacer1.Replace(comment.AuthorUrl)
-	comment.AuthorUrl = UrlReplacer2.Replace(comment.AuthorUrl)
-	comment.Content = QuotesReplacer.Replace(comment.Content)
-	comment.Content = EmojiReplacer.Replace(comment.Content)
-
-	// open comment file
-	f, err := os.OpenFile(commentFileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// write file
-	err = CommentTemplate.Execute(f, comment)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
+//func convertComment(comment wp.Comment, commentFileName string, indentLevel int) error {
+//	// set indentation
+//	comment.IndentLevel = indentLevel
+//
+//	// own comments may need replacements
+//	comment = FixCommentAuthor(comment)
+//	comment.AuthorUrl = UrlReplacer1.Replace(comment.AuthorUrl)
+//	comment.AuthorUrl = UrlReplacer2.Replace(comment.AuthorUrl)
+//	comment.Content = QuotesReplacer.Replace(comment.Content)
+//	comment.Content = EmojiReplacer.Replace(comment.Content)
+//
+//	// open comment file
+//	f, err := os.OpenFile(commentFileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+//	if err != nil {
+//		return err
+//	}
+//	defer f.Close()
+//
+//	// write file
+//	err = CommentTemplate.Execute(f, comment)
+//	if err != nil {
+//		return err
+//	}
+//
+//	return nil
+//}
